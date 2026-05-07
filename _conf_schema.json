@@ -1,0 +1,14 @@
+{
+    "output_config": {
+        "description": "输出配置",
+        "type": "object",
+        "items": {
+            "plain_text_output": {
+                "description": "纯文本输出",
+                "hint": "开启后使用纯文本格式输出内容。",
+                "type": "bool",
+                "default": false
+            }
+        }
+    }
+}

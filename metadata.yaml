@@ -1,0 +1,6 @@
+name: astrbot_plugin_arcraiders_bot
+display_name: Arc Raiders Bot
+desc: Arc Raiders 相关查询工具，目前仅支持地图事件查询。
+version: v0.2.3
+author: Kylerupinski
+repo: https://github.com/Kylerupinski/astrbot_plugin_arcraiders_bot
