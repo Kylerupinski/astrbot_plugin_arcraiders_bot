@@ -1,14 +1,14 @@
 import aiohttp
 import asyncio
 import json
-import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from astrbot.api import logger
 
+from . import BEIJING_TZ, icon_path
+
 API_URL = "https://metaforge.app/api/arc-raiders"
-BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 async def fetch_and_save_events(data_dir: str) -> str | None:
@@ -53,10 +53,9 @@ async def fetch_and_save_events(data_dir: str) -> str | None:
                 if not icon_url:
                     continue
 
-                filename = _icon_filename(ev)
-                icon_path = icons_dir / filename
+                filepath = icon_path(icons_dir, ev)
 
-                if icon_path.exists():
+                if filepath.exists():
                     icon_count += 1
                     continue
 
@@ -64,7 +63,7 @@ async def fetch_and_save_events(data_dir: str) -> str | None:
                     async with session.get(icon_url, timeout=10) as icon_resp:
                         if icon_resp.status == 200:
                             icon_data = await icon_resp.read()
-                            with open(icon_path, "wb") as f:
+                            with open(filepath, "wb") as f:
                                 f.write(icon_data)
                             icon_count += 1
                         else:
@@ -82,12 +81,3 @@ async def fetch_and_save_events(data_dir: str) -> str | None:
         return f"请求失败: {str(e)}"
 
     return None
-
-
-def _icon_filename(ev: dict) -> str:
-    """根据事件的 map 和 name 生成安全的图标文件名。"""
-    map_name = ev.get("map", "unknown")
-    event_name = ev.get("name", "unknown")
-    raw = f"{map_name}_{event_name}"
-    safe = re.sub(r"[^\w\-]", "_", raw)
-    return f"{safe}.webp"

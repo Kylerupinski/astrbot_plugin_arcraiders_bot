@@ -1,17 +1,16 @@
 import json
-import re
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 
 from astrbot.api import logger
+
+from . import BEIJING_TZ, icon_path
 
 try:
     from PIL import Image, ImageDraw, ImageFont
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
-
-BEIJING_TZ = timezone(timedelta(hours=8))
 
 MAP_NAMES = {
     "Dam": "大坝战场",
@@ -75,6 +74,8 @@ def _filter_events(raw: dict) -> dict:
     current_slot_start = now_beijing.replace(minute=0, second=0, microsecond=0)
     next_slot_start = current_slot_start + timedelta(hours=1)
 
+    SLOT_TOLERANCE_MS = 60_000  # 1 分钟容差，避免毫秒级偏差漏掉事件
+
     current_slot_ms = int(current_slot_start.timestamp() * 1000)
     next_slot_ms = int(next_slot_start.timestamp() * 1000)
 
@@ -84,9 +85,11 @@ def _filter_events(raw: dict) -> dict:
     for ev in events:
         st = ev.get("startTime")
         map_name = ev.get("map", "未知地图")
-        if st == current_slot_ms:
+        if st is None:
+            continue
+        if abs(st - current_slot_ms) <= SLOT_TOLERANCE_MS:
             current_events[map_name] = ev
-        elif st == next_slot_ms:
+        elif abs(st - next_slot_ms) <= SLOT_TOLERANCE_MS:
             next_events[map_name] = ev
 
     all_maps = sorted(set(list(current_events.keys()) + list(next_events.keys())))
@@ -197,9 +200,9 @@ def generate_event_image(data_dir: str) -> str | None:
     row_count = max(len(cur_maps), len(next_maps), 1)
 
     # 加载字体
-    font_title = _load_font(font_size_title, bold=True)
+    font_title = _load_font(font_size_title)
     font_countdown = _load_font(font_size_countdown)
-    font_card_title = _load_font(font_size_card_title, bold=True)
+    font_card_title = _load_font(font_size_card_title)
     font_body = _load_font(font_size_body)
     font_footer = _load_font(font_size_footer)
 
@@ -269,6 +272,8 @@ def generate_event_image(data_dir: str) -> str | None:
         footer_h + 12 +  # 底部单行（左右两段）
         outer_margin  # 下外边距
     )
+
+    temp_img.close()
 
     # 创建画布
     img = Image.new("RGB", (img_w, img_h), color=(30, 30, 32))
@@ -366,15 +371,6 @@ def generate_event_image(data_dir: str) -> str | None:
     return str(output_path)
 
 
-def _icon_path(icons_dir: Path, ev: dict) -> Path:
-    """根据事件的 map 和 name 构造图标文件路径。"""
-    map_name = ev.get("map", "unknown")
-    event_name = ev.get("name", "unknown")
-    raw = f"{map_name}_{event_name}"
-    safe = re.sub(r"[^\w\-]", "_", raw)
-    return icons_dir / f"{safe}.webp"
-
-
 def _draw_card_content(draw, img, x: int, y: int,
                        card_title: str,
                        maps: list[str], events_map: dict,
@@ -400,16 +396,16 @@ def _draw_card_content(draw, img, x: int, y: int,
 
         # 图标
         if ev:
-            icon_path = _icon_path(icons_dir, ev)
+            filepath = icon_path(icons_dir, ev)
             icon_y = cy + (line_h - icon_size) // 2
-            if icon_path.exists():
+            if filepath.exists():
                 try:
-                    icon_img = Image.open(icon_path).convert("RGBA")
+                    icon_img = Image.open(filepath).convert("RGBA")
                     icon_img = icon_img.resize((icon_size, icon_size), Image.LANCZOS)
                     img.paste(icon_img, (x, icon_y), icon_img)
                     text_x = x + icon_size + icon_gap
                 except Exception as e:
-                    logger.debug(f"[ArcRaiders] 图标加载失败 {icon_path}: {e}")
+                    logger.debug(f"[ArcRaiders] 图标加载失败 {filepath}: {e}")
 
         # 地图名称
         map_text = f"{map_cn}"
@@ -450,14 +446,14 @@ def _remaining_time() -> str:
     now = datetime.now(BEIJING_TZ)
     next_slot = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     delta = next_slot - now
+    if delta.total_seconds() >= 3600:
+        return "即将切换"
     minutes = delta.seconds // 60
     seconds = delta.seconds % 60
     return f"{minutes}分{seconds:02d}秒"
 
 
 def _fmt_time(ts: int) -> str:
-    if not ts:
-        return "--:--"
     dt = datetime.fromtimestamp(ts / 1000, tz=BEIJING_TZ)
     return dt.strftime("%m-%d %H:%M")
 
@@ -467,7 +463,7 @@ _FONT_CJK = _FONTS_DIR / "SarasaGothicSC.ttf"
 _FONT_EMOJI = _FONTS_DIR / "NotoColorEmoji.ttf"
 
 
-def _load_font(size: int, bold: bool = False):
+def _load_font(size: int):
     """加载主字体 SarasaGothicSC，加载失败回退到 PIL 默认字体。"""
     try:
         return ImageFont.truetype(str(_FONT_CJK), size)

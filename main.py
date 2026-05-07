@@ -29,7 +29,7 @@ class ArcRaidersPlugin(Star):
 
     @property
     def _plain_text(self) -> bool:
-        output_cfg = self.config.get("output_config", {}) if hasattr(self, "config") else {}
+        output_cfg = self.config.get("output_config", {})
         return bool(output_cfg.get("plain_text_output", True))
 
     @filter.command_group("arc")
@@ -55,7 +55,13 @@ class ArcRaidersPlugin(Star):
             yield event.plain_result(result)
             return
 
-        img_path = await asyncio.to_thread(generate_event_image, str(self._data_dir))
+        try:
+            img_path = await asyncio.to_thread(generate_event_image, str(self._data_dir))
+        except Exception as e:
+            logger.error(f"[ArcRaiders] 图片生成失败: {e}")
+            yield event.plain_result(f"图片生成失败: {e}")
+            return
+
         if img_path is None:
             yield event.plain_result("暂无事件数据，请先使用 /arc get 下载数据。")
             return
